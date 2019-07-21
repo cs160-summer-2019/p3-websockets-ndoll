@@ -14,7 +14,7 @@
         body {
             background-color: #666666;
         }
-        .container {
+        .canvas-container {
             position: fixed;
             top: 50%;
             left: 50%;
@@ -25,7 +25,7 @@
 </head>
 <body>
     <!-- You may change the dimensions of this canvas -->
-    <div class="container">
+    <div class="canvas-container">
         <canvas id="myCanvas" width="750px" height="750px" style="background: #FFFFFF"></canvas>
     </div>
 </body>
@@ -38,14 +38,14 @@
         } else {
             isLarge = false;
         }
-        window.addEventListener('devicemotion', (event) => {
-            var acc = event.acceleration;
+        window.addEventListener('devicemotion', (e) => { // device shake
+            var acc = e.acceleration;
             if (Math.abs(acc.x) > 30 || Math.abs(acc.y) > 30 || Math.abs(acc.z) > 30) {
                 paper.project.clear();
             }
         });
-        window.addEventListener('deviceorientation', (event) => {
-            if (event.gamma > 30) {
+        window.addEventListener('deviceorientation', (e) => { // device tilt right
+            if (e.gamma > 30) {
                 clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
             }
         });
@@ -58,12 +58,11 @@
 
     var socket = new WebSocket('wss://p3-websockets-ndoll-leeeugene901469.codeanyapp.com/ws/draw');
     
-    socket.onmessage = function(event) {
-        var msg = JSON.parse(event.data);
-        
-        if (msg.id != uuidClient && isLarge) {
+    socket.onmessage = function(e) {
+        var msg = JSON.parse(e.data);
+        if (msg.id != clientUUID && isLarge) {
             switch(msg.type) {
-                case "point":
+                case "mouseDrag":
                     paths[msg.id].add(new paper.Point(msg.x, msg.y));
                     break;
                 case "mouseDown":
@@ -80,44 +79,36 @@
         console.error('Socket closed unexpectedly.');
     };
 
-    var pencilPath;
-    var pencilMessage;
-    var uuidClient = uuidv4();
+    var clientPath;
+    var clientUUID = uuidv4();
     var clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
     var isLarge;
-    
-    var paths = {};
+    var paths = {}; // {UUID: Path}
 
-    tool.onMouseDown = function(event) {
-        pencilPath = new paper.Path();
-        pencilPath.strokeColor = clientColor;
-        pencilPath.strokeWidth = 4;
+    tool.onMouseDown = function(e) {
+        clientPath = new paper.Path();
+        clientPath.strokeColor = clientColor;
+        clientPath.strokeWidth = 4;
         
         var msg = {
             type: "mouseDown",
-            id: uuidClient,
+            id: clientUUID,
             color: clientColor
         };
         socket.send(JSON.stringify(msg));
     };
     
-    tool.onMouseDrag = function(event) {
-        pencilPath.add(event.point);
-        sendPointAsString(event.point);
-    };
-    
-    tool.onMouseUp = function(event) {
-    };
-    
-    function sendPointAsString(point) {
+    tool.onMouseDrag = function(e) {
+        clientPath.add(e.point);
+
         var msg = {
-            type: "point",
-            id: uuidClient,
-            x: point["x"],
-            y: point["y"]
+            type: "mouseDrag",
+            id: clientUUID,
+            x: e.point.x,
+            y: e.point.y
         };
         socket.send(JSON.stringify(msg));
-    }
+    };
     
     // v4 UUID generator code from https://gist.github.com/jed/982883
     function uuidv4() {
