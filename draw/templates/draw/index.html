@@ -11,26 +11,105 @@
     <script type="text/javascript" src="{% static 'draw/vendor/paper/paper-full.min.js' %}"></script>
 
     <style type="text/css">
+        body {
+            background-color: #666666;
+        }
     </style>
 
 </head>
 <body>
     <!-- You may change the dimensions of this canvas -->
-    <canvas id="myCanvas" width="750px" height="750px"></canvas>
+    <canvas id="myCanvas" width="750px" height="750px" style="background: #FFFFFF"></canvas>
+    <div id="debug">
+        test
+    </div>
 </body>
 <script>
-
+    document.addEventListener('DOMContentLoaded', init, false);
+    function init() {
+        var url = window.location.href;
+        if (url.indexOf("large") > -1) {
+            isLarge = true;
+        } else {
+            isLarge = false;
+        }
+        window.addEventListener('devicemotion', (event) => {
+            var acc = event.acceleration;
+            if (Math.abs(acc.x) > 50 || Math.abs(acc.y) > 50 || Math.abs(acc.z) > 50) {
+                paper.project.clear();
+            }
+        });
+    }
+    
     // setting up the canvas and one paper tool
     var canvas = document.getElementById('myCanvas');
     paper.setup(canvas);
     var tool = new paper.Tool();
 
-    // getting the URL (you may want to use for Exercise 3)
-    var url = window.location.href;
+    var socket = new WebSocket('wss://p3-websockets-ndoll-leeeugene901469.codeanyapp.com/ws/draw');
+    
+    socket.onmessage = function(event) {
+        var msg = JSON.parse(event.data);
+        
+        if (msg.id != uuidClient && isLarge) {
+            switch(msg.type) {
+                case "point":
+                    paths[msg.id].add(new paper.Point(msg.x, msg.y));
+                    break;
+                case "mouseDown":
+                    var path = new paper.Path();
+                    path.strokeColor = msg.color;
+                    paths[msg.id] = path;
+                    break;
+            }
+        }
+    };
+    
+    socket.onclose = function(e) {
+        console.error('Socket closed unexpectedly.');
+    };
 
-    // var socket = new WebSocket(
-    //     'wss://<your url here>/ws/draw');
+    var pencilPath;
+    var pencilMessage;
+    var uuidClient = uuidv4();
+    var clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
+    var isLarge;
+    
+    var paths = {};
 
-
+    tool.onMouseDown = function(event) {
+        pencilPath = new paper.Path();
+        pencilPath.strokeColor = clientColor;
+        
+        var msg = {
+            type: "mouseDown",
+            id: uuidClient,
+            color: clientColor
+        };
+        socket.send(JSON.stringify(msg));
+    };
+    
+    tool.onMouseDrag = function(event) {
+        pencilPath.add(event.point);
+        sendPointAsString(event.point);
+    };
+    
+    tool.onMouseUp = function(event) {
+    };
+    
+    function sendPointAsString(point) {
+        var msg = {
+            type: "point",
+            id: uuidClient,
+            x: point["x"],
+            y: point["y"]
+        };
+        socket.send(JSON.stringify(msg));
+    }
+    
+    // v4 UUID generator code from https://gist.github.com/jed/982883
+    function uuidv4() {
+        return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+    }
 </script>
 </html>
