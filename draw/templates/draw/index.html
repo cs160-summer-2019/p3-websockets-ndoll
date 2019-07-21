@@ -20,9 +20,6 @@
 <body>
     <!-- You may change the dimensions of this canvas -->
     <canvas id="myCanvas" width="750px" height="750px" style="background: #FFFFFF"></canvas>
-    <div id="debug">
-        test
-    </div>
 </body>
 <script>
     document.addEventListener('DOMContentLoaded', init, false);
@@ -35,8 +32,13 @@
         }
         window.addEventListener('devicemotion', (event) => {
             var acc = event.acceleration;
-            if (Math.abs(acc.x) > 50 || Math.abs(acc.y) > 50 || Math.abs(acc.z) > 50) {
+            if (Math.abs(acc.x) > 30 || Math.abs(acc.y) > 30 || Math.abs(acc.z) > 30) {
                 paper.project.clear();
+            }
+        });
+        window.addEventListener('deviceorientation', (event) => {
+            if (event.gamma > 30) {
+                clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
             }
         });
     }
