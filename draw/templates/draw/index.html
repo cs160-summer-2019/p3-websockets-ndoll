@@ -3,54 +3,68 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>P4 Drawing</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>P4 Drawing</title>
 
-    <link rel="stylesheet" type="text/css" href="{% static 'draw/vendor/bootstrap/css/bootstrap.min.css' %}">
-    <script type="text/javascript" src="{% static 'draw/vendor/jquery/jquery-3.3.1.min.js' %}"></script>
-    <script type="text/javascript" src="{% static 'draw/vendor/paper/paper-full.min.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'draw/vendor/bootstrap/css/bootstrap.min.css' %}">
+  <script type="text/javascript" src="{% static 'draw/vendor/jquery/jquery-3.3.1.min.js' %}"></script>
+  <script type="text/javascript" src="{% static 'draw/vendor/paper/paper-full.min.js' %}"></script>
 
-    <style type="text/css">
-        body {
-            background-color: #666666;
-        }
-        .canvas-container {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        }
-    </style>
+  <style type="text/css">
+    body {
+      background-color: #666666;
+    }
+    .canvas-container {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
 
 </head>
 <body>
-    <!-- You may change the dimensions of this canvas -->
-    <div class="canvas-container">
-        <canvas id="myCanvas" width="750px" height="750px" style="background: #FFFFFF"></canvas>
-    </div>
+  <!-- You may change the dimensions of this canvas -->
+  <div class="canvas-container">
+    <canvas id="myCanvas" width="750px" height="750px" style="background: #FFFFFF"></canvas>
+  </div>
 </body>
 <script>
-    document.addEventListener('DOMContentLoaded', init, false);
-    function init() {
-        var url = window.location.href;
-        if (url.indexOf("large") > -1) {
-            isLarge = true;
-        } else {
-            isLarge = false;
-        }
-        window.addEventListener('devicemotion', (e) => { // device shake
-            var acc = e.acceleration;
-            if (Math.abs(acc.x) > 30 || Math.abs(acc.y) > 30 || Math.abs(acc.z) > 30) {
-                paper.project.clear();
-            }
-        });
-        window.addEventListener('deviceorientation', (e) => { // device tilt right
-            if (e.gamma > 30) {
-                clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
-            }
-        });
+  $(document).ready(function() {
+    var url = window.location.href;
+    if (url.indexOf("large") > -1) {
+      isLarge = true;
+    } else {
+      isLarge = false;
     }
-    
+
+    window.addEventListener('devicemotion', function(e) { // device shake
+      var acc = e.acceleration;
+      if (Math.abs(acc.x) > 30 || Math.abs(acc.y) > 30 || Math.abs(acc.z) > 30) {
+        groups[clientUUID].removeChildren();
+        var msg = {
+          type: "clear",
+          id: clientUUID
+        };
+        socket.send(JSON.stringify(msg));
+      }
+    });
+
+    var prevGamma = 0;
+    window.addEventListener('deviceorientation', function(e) { // device tilt right
+      if (e.gamma > 30 && prevGamma < 30) {
+        clientColor = randomColor();
+        groups[clientUUID].strokeColor = clientColor;
+        var msg = {
+          type: "changeColor",
+          id: clientUUID,
+          color: clientColor
+        };
+        socket.send(JSON.stringify(msg));
+      }
+      prevGamma = e.gamma;
+    });
+
     // setting up the canvas and one paper tool
     var canvas = document.getElementById('myCanvas');
     paper.setup(canvas);
@@ -59,60 +73,93 @@
     var socket = new WebSocket('wss://p3-websockets-ndoll-leeeugene901469.codeanyapp.com/ws/draw');
     
     socket.onmessage = function(e) {
-        var msg = JSON.parse(e.data);
-        if (msg.id != clientUUID && isLarge) {
-            switch(msg.type) {
-                case "mouseDrag":
-                    paths[msg.id].add(new paper.Point(msg.x, msg.y));
-                    break;
-                case "mouseDown":
-                    var path = new paper.Path();
-                    path.strokeColor = msg.color;
-                    path.strokeWidth = 4;
-                    paths[msg.id] = path;
-                    break;
+      var msg = JSON.parse(e.data);
+      if (msg.id != clientUUID && isLarge) {
+        switch(msg.type) {
+          case "mouseDrag":
+            paths[msg.id].add(new paper.Point(msg.x, msg.y));
+            break;
+          case "mouseDown":
+            var path = new paper.Path();
+            path.strokeColor = msg.color;
+            path.strokeWidth = 4;
+            paths[msg.id] = path;
+            break;
+          case "mouseUp":
+            if (!(msg.id in groups)) {
+              groups[msg.id] = new paper.Group();
             }
+            groups[msg.id].addChild(paths[msg.id]);
+            break;
+          case "changeColor":
+            groups[msg.id].strokeColor = msg.color;
+            break;
+          case "clear":
+            if (msg.id in groups) {
+              groups[msg.id].removeChildren();
+            }
+            break;
         }
+      }
     };
     
     socket.onclose = function(e) {
-        console.error('Socket closed unexpectedly.');
+      console.error('Socket closed unexpectedly.');
     };
 
     var clientPath;
     var clientUUID = uuidv4();
-    var clientColor = "#" + Math.floor(Math.random()*16777215).toString(16);
+    var clientColor = randomColor();
     var isLarge;
     var paths = {}; // {UUID: Path}
+    var groups = {}; // {UUID: Group}
 
     tool.onMouseDown = function(e) {
-        clientPath = new paper.Path();
-        clientPath.strokeColor = clientColor;
-        clientPath.strokeWidth = 4;
-        
-        var msg = {
-            type: "mouseDown",
-            id: clientUUID,
-            color: clientColor
-        };
-        socket.send(JSON.stringify(msg));
+      clientPath = new paper.Path();
+      clientPath.strokeColor = clientColor;
+      clientPath.strokeWidth = 4;
+      
+      var msg = {
+        type: "mouseDown",
+        id: clientUUID,
+        color: clientColor
+      };
+      socket.send(JSON.stringify(msg));
     };
     
     tool.onMouseDrag = function(e) {
-        clientPath.add(e.point);
+      clientPath.add(e.point);
 
-        var msg = {
-            type: "mouseDrag",
-            id: clientUUID,
-            x: e.point.x,
-            y: e.point.y
-        };
-        socket.send(JSON.stringify(msg));
+      var msg = {
+        type: "mouseDrag",
+        id: clientUUID,
+        x: e.point.x,
+        y: e.point.y
+      };
+      socket.send(JSON.stringify(msg));
     };
+    
+    tool.onMouseUp = function(e) {
+      if (!(clientUUID in groups)) {
+        groups[clientUUID] = new paper.Group();
+      }
+      groups[clientUUID].addChild(clientPath);
+
+      var msg = {
+        type: "mouseUp",
+        id: clientUUID
+      };
+      socket.send(JSON.stringify(msg));
+    }
+    
+    function randomColor() {
+      return "#" + Math.floor(Math.random()*16777215).toString(16);
+    }
     
     // v4 UUID generator code from https://gist.github.com/jed/982883
     function uuidv4() {
-        return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+      return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
     }
+  });
 </script>
 </html>
